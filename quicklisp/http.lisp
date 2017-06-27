@@ -356,21 +356,31 @@ information."
             (encode (lisp-implementation-type))
             (version-string (lisp-implementation-version)))))
 
-(defun make-request-buffer (host port path &key (method "GET"))
+(defun make-request-buffer (host port path &key (method "GET") headers)
   "Return an octet vector suitable for sending as an HTTP 1.1 request."
   (setf method (string method))
   (when *proxy-url*
     (setf path (full-proxy-path host port path)))
-  (let ((sink (make-instance 'octet-sink)))
+  (let* ((sink (make-instance 'octet-sink)))
     (flet ((add-line (&rest strings)
              (apply #'add-strings sink strings)
-             (add-newline sink)))
+             (add-newline sink))
+           (get-header (header default)
+             (or (cdr (assoc header headers :test #'string-equal))
+                 default)))
       (add-line method " " path " HTTP/1.1")
-      (add-line "Host: " host (if (integerp port)
-                                  (format nil ":~D" port)
-                                  ""))
+      (add-line "Host: " (get-header "Host"
+                                     (if (integerp port)
+                                         (format nil "~A:~D" host port)
+                                         host)))
       (add-line "Connection: close")
-      (add-line "User-Agent: " (user-agent-string))
+      (add-line "User-Agent: " (get-header "User-Agent"
+                                           (user-agent-string)))
+      (dolist (h (remove-if (lambda (x)
+                              (member x '("Host" "Connection" "User-Agent")
+                                      :test #'string-equal))
+                            headers :key #'car))
+        (add-line (car h) ": " (cdr h)))
       (add-newline sink)
       (sink-buffer sink))))
 
@@ -587,6 +597,39 @@ the indexes in the header accordingly."
            (error "No header found in response"))
          (setf state (funcall state (aref vector pos))))))))
 
+(defvar *secure-schemes* (list "https")
+  "A list of schemes to be considered secure when determining if
+connection headers should be sent.")
+
+(defun headers-for-url (url)
+  "Look into the config value store to see if the user has specified
+any headers to be used for this URL.
+
+Returns an alist of (header . value) pairs."
+  (let* ((url (url url))
+         (hostname (string-downcase (hostname url)))
+         (scheme (scheme url))
+         (headers-by-value (config-paths (concatenate 'string
+                                                      "fetch-headers/"
+                                                      hostname
+                                                      "/**/value")))
+         (out nil))
+    (flet ((header-name (path)
+             (first (last (pathname-directory path))))
+           (header-secure-p (header-name)
+             (config-value (concatenate 'string
+                                        "fetch-headers/"
+                                        hostname
+                                        "/" header-name
+                                        "/secure"))))
+      (dolist (h headers-by-value)
+        (let* ((header-name (header-name h))
+               (header-value (config-value h))
+               (header-secure-p (header-secure-p header-name)))
+          (when (or (not header-secure-p)
+                    (member scheme *secure-schemes* :test #'string=))
+            (push (cons header-name header-value) out)))))
+    out))
 
 ;;; HTTP URL parsing
 
@@ -683,7 +726,8 @@ the indexes in the header accordingly."
   (:method (method url)
     (setf url (url url))
     (make-request-buffer (hostname url) (or (port url) 80) (path url)
-                         :method method)))
+                         :method method
+                         :headers (headers-for-url url))))
 
 (defun urlstring (url)
   (format nil "~@[~A://~]~@[~A~]~@[:~D~]~A"

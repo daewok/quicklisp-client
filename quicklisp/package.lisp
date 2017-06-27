@@ -107,7 +107,9 @@
            #:path
            #:url
            #:*maximum-redirects*
-           #:*default-url-defaults*)
+           #:*default-url-defaults*
+           #:headers-for-url
+           #:*secure-schemes*)
   (:export #:fetch-error
            #:unexpected-http-status
            #:unexpected-http-status-code
