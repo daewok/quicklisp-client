@@ -735,8 +735,9 @@ the given NAME."
 (defmethod local-archive-file ((release release))
   (relative-to (dist release)
                (make-pathname :directory '(:relative "archives")
-                              :defaults (file-namestring
-                                         (path (url (archive-url release)))))))
+                              :defaults (ql-parse-namestring
+                                         (file-namestring
+                                          (path (url (archive-url release))))))))
 
 (defmethod ensure-local-archive-file ((release release))
   (let ((pathname (local-archive-file release)))
@@ -1006,7 +1007,7 @@ the given NAME."
     (when (probe-file metadata-file)
       (with-open-file (stream metadata-file)
         (let* ((relative (read-line stream))
-               (full (qmerge relative)))
+               (full (qmerge (ql-parse-namestring relative))))
           (when (probe-file full)
             full))))))
 

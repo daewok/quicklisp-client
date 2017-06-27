@@ -122,3 +122,15 @@ http://foo/bar-versions.txt."
                    (subseq url 0 suffix-pos)
                    "-versions"
                    extension))))
+
+(defun ql-parse-namestring (namestring)
+  "Parses namestring and returns a pathname.
+
+SBCL treats #\\? as a single character wildcard, to prevent this, this
+function calls sb-ext:parse-native-namestring when on SBCL and
+cl:parse-namestring elsewhere."
+  #+sbcl
+  (sb-ext:parse-native-namestring
+   namestring)
+  #-sbcl
+  (parse-namestring namestring))
